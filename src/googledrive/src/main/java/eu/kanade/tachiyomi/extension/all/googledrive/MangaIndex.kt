@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.googledrive
 
+import eu.kanade.tachiyomi.lib.archive.ArchiveKind
+import eu.kanade.tachiyomi.lib.archive.NaturalOrder
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -101,7 +103,7 @@ class MangaIndex(
                     key = key,
                     title = file.name.substringBeforeLast('.'),
                     path = file.name,
-                    cover = file.takeIf { it.kind == FileKind.PDF }?.let { DriveApi.thumbnailUrl(DriveRef(it.id, it.resourceKey)) },
+                    cover = file.takeIf { it.kind == ArchiveKind.PDF }?.let { DriveApi.thumbnailUrl(DriveRef(it.id, it.resourceKey)) },
                     modified = file.modified,
                     chapters = 1,
                 )
@@ -125,7 +127,7 @@ class MangaIndex(
         val images = children.filter { it.isImage && !it.isFolder }
         val cover = images.firstOrNull { COVER_NAMES.matches(it.name) }
             ?: images.minWithOrNull(compareBy(NaturalOrder) { it.name })
-            ?: files.filter { it.kind == FileKind.PDF }.minWithOrNull(compareBy(NaturalOrder) { it.name })
+            ?: files.filter { it.kind == ArchiveKind.PDF }.minWithOrNull(compareBy(NaturalOrder) { it.name })
             ?: return null
         return DriveApi.thumbnailUrl(DriveRef(cover.id, cover.resourceKey))
     }
@@ -173,28 +175,5 @@ class MangaIndex(
         private const val PARALLEL_REQUESTS = 4
         private const val MAX_DEPTH = 15
         private val COVER_NAMES = Regex("""(?i)^(cover|folder|poster|portada)\.\w+$""")
-    }
-}
-
-/** Orden "natural": "Vol 2" va antes que "Vol 10". */
-object NaturalOrder : Comparator<String> {
-    private val CHUNK = Regex("""\d+|\D+""")
-
-    override fun compare(a: String, b: String): Int {
-        val ca = CHUNK.findAll(a.lowercase()).map { it.value }.toList()
-        val cb = CHUNK.findAll(b.lowercase()).map { it.value }.toList()
-        for (i in 0 until minOf(ca.size, cb.size)) {
-            val x = ca[i]
-            val y = cb[i]
-            val cmp = if (x[0].isDigit() && y[0].isDigit()) {
-                val nx = x.trimStart('0')
-                val ny = y.trimStart('0')
-                if (nx.length != ny.length) nx.length - ny.length else nx.compareTo(ny)
-            } else {
-                x.compareTo(y)
-            }
-            if (cmp != 0) return cmp
-        }
-        return ca.size - cb.size
     }
 }

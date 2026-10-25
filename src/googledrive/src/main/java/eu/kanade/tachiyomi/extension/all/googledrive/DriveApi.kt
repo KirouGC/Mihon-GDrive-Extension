@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.googledrive
 
+import eu.kanade.tachiyomi.lib.archive.ArchiveKind
+import eu.kanade.tachiyomi.lib.archive.isImageName
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -23,35 +25,14 @@ data class DriveItem(
 ) {
     val isFolder get() = mimeType == FOLDER_MIME
 
-    val kind: FileKind? get() = FileKind.of(name, mimeType)
+    val kind: ArchiveKind? get() = ArchiveKind.of(name, mimeType)
 
     val isImage: Boolean
-        get() = mimeType.startsWith("image/") || IMAGE_EXTENSIONS.any { name.endsWith(".$it", ignoreCase = true) }
-}
-
-enum class FileKind(val code: String) {
-    CBZ("cbz"),
-    PDF("pdf"),
-    ;
-
-    companion object {
-        fun of(name: String, mimeType: String): FileKind? {
-            val lower = name.lowercase(Locale.ROOT)
-            return when {
-                lower.endsWith(".cbz") || lower.endsWith(".zip") -> CBZ
-                lower.endsWith(".pdf") || mimeType == "application/pdf" -> PDF
-                else -> null
-            }
-        }
-
-        fun fromCode(code: String) = entries.first { it.code == code }
-    }
+        get() = mimeType.startsWith("image/") || isImageName(name)
 }
 
 const val FOLDER_MIME = "application/vnd.google-apps.folder"
 private const val SHORTCUT_MIME = "application/vnd.google-apps.shortcut"
-
-val IMAGE_EXTENSIONS = listOf("jpg", "jpeg", "png", "webp", "gif", "avif", "bmp", "jxl", "heic")
 
 /** Referencia a una carpeta o archivo de Drive tal como la pega el usuario. */
 data class DriveRef(val id: String, val resourceKey: String?) {

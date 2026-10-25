@@ -8,11 +8,12 @@ import shutil
 import subprocess
 from pathlib import Path
 
-PKG = "eu.kanade.tachiyomi.extension.all.googledrive"
-NAME = "Google Drive"
-LANG = "all"
+# pkg -> (nombre de la fuente, idioma, baseUrl, nombre corto para el APK y el ícono)
+EXTENSIONS = {
+    "eu.kanade.tachiyomi.extension.all.googledrive": ("Google Drive", "all", "https://drive.google.com", "googledrive"),
+    "eu.kanade.tachiyomi.extension.all.nyaa": ("Nyaa (Literature)", "all", "https://nyaa.si", "nyaa"),
+}
 VERSION_ID = 1
-BASE_URL = "https://drive.google.com"
 
 
 def source_id(name: str, lang: str, version_id: int) -> int:
@@ -24,50 +25,59 @@ def source_id(name: str, lang: str, version_id: int) -> int:
     return value & 0x7FFFFFFFFFFFFFFF
 
 
+def badging(aapt2: str, apk: str) -> tuple[str, int, str]:
+    out = subprocess.run([aapt2, "dump", "badging", apk], capture_output=True, text=True, check=True).stdout
+    pkg = re.search(r"package: name='([^']+)'", out).group(1)
+    code = int(re.search(r"versionCode='(\d+)'", out).group(1))
+    version = re.search(r"versionName='([^']+)'", out).group(1)
+    return pkg, code, version
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--apk", required=True)
-    parser.add_argument("--icon", required=True)
+    parser.add_argument("--apk", required=True, action="append")
+    parser.add_argument("--icons", required=True, help="carpeta con <nombre corto>-web.png")
     parser.add_argument("--apksigner", required=True)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
 
-    badging = subprocess.run(
-        [str(Path(args.apksigner).parent / "aapt2"), "dump", "badging", args.apk],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    code = int(re.search(r"versionCode='(\d+)'", badging).group(1))
-    version = re.search(r"versionName='([^']+)'", badging).group(1)
-
-    certs = subprocess.run(
-        [args.apksigner, "verify", "--print-certs", args.apk],
-        capture_output=True, text=True, check=True,
-    ).stdout
-    fingerprint = re.search(r"SHA-256 digest: ([0-9a-f]+)", certs).group(1)
-
+    aapt2 = str(Path(args.apksigner).parent / "aapt2")
     out = Path(args.out)
     (out / "apk").mkdir(parents=True, exist_ok=True)
     (out / "icon").mkdir(parents=True, exist_ok=True)
-    apk_name = f"tachiyomi-all.googledrive-v{version}.apk"
-    shutil.copy(args.apk, out / "apk" / apk_name)
-    shutil.copy(args.icon, out / "icon" / f"{PKG}.png")
 
-    index = [{
-        "name": f"Tachiyomi: {NAME}",
-        "pkg": PKG,
-        "apk": apk_name,
-        "lang": LANG,
-        "code": code,
-        "version": version,
-        "nsfw": 0,
-        "sources": [{
-            "name": NAME,
-            "lang": LANG,
-            "id": str(source_id(NAME, LANG, VERSION_ID)),
-            "baseUrl": BASE_URL,
-        }],
-    }]
+    index = []
+    fingerprint = None
+    for apk in args.apk:
+        pkg, code, version = badging(aapt2, apk)
+        name, lang, base_url, short = EXTENSIONS[pkg]
+
+        certs = subprocess.run(
+            [args.apksigner, "verify", "--print-certs", apk], capture_output=True, text=True, check=True,
+        ).stdout
+        fingerprint = re.search(r"SHA-256 digest: ([0-9a-f]+)", certs).group(1)
+
+        apk_name = f"tachiyomi-{lang}.{short}-v{version}.apk"
+        shutil.copy(apk, out / "apk" / apk_name)
+        shutil.copy(Path(args.icons) / f"{short}-web.png", out / "icon" / f"{pkg}.png")
+        index.append({
+            "name": f"Tachiyomi: {name}",
+            "pkg": pkg,
+            "apk": apk_name,
+            "lang": lang,
+            "code": code,
+            "version": version,
+            "nsfw": 0,
+            "sources": [{
+                "name": name,
+                "lang": lang,
+                "id": str(source_id(name, lang, VERSION_ID)),
+                "baseUrl": base_url,
+            }],
+        })
+
+    index.sort(key=lambda e: e["name"])
     (out / "index.min.json").write_text(json.dumps(index, separators=(",", ":"), ensure_ascii=False))
     (out / "index.json").write_text(json.dumps(index, indent=2, ensure_ascii=False))
 

@@ -1,8 +1,14 @@
-# Google Drive para Mihon
+# Extensiones para Mihon
 
-Extensión para [Mihon](https://mihon.app) que abre una o varias carpetas de Google Drive
-compartidas por enlace y busca mangas en todas sus subcarpetas. Lee archivos **CBZ** (y ZIP)
-y **PDF**.
+Dos extensiones para [Mihon](https://mihon.app), publicadas en el mismo repositorio de extensiones:
+
+- **Google Drive**: abre carpetas compartidas por enlace y busca mangas en todas sus subcarpetas.
+- **Nyaa (Literature)**: busca torrents en la categoría Literature de nyaa.si y los lee con un
+  cliente torrent integrado.
+
+Las dos leen archivos **CBZ** (y ZIP) y **PDF**; Nyaa también lee carpetas de imágenes sueltas.
+
+# Google Drive
 
 ## Cómo organiza tus carpetas
 
@@ -38,7 +44,22 @@ archivos en carpetas muy grandes. Con una clave gratuita de la Drive API el list
 2. En **APIs y servicios → Credenciales → Crear credenciales → Clave de API**.
 3. Pega la clave en los ajustes de la extensión.
 
-## Instalar
+# Nyaa (Literature)
+
+- Busca solo en Literature, con filtros por categoría (traducido al inglés, a otro idioma o raw),
+  remakes/trusted y orden (recientes, seeders, descargas, tamaño). "Populares" ordena por seeders.
+- Cada torrent es un manga. Sus capítulos salen del archivo `.torrent`: cada CBZ/PDF es un capítulo,
+  y también cada carpeta con imágenes sueltas.
+- Al abrir un capítulo se baja **solo ese archivo** del torrent con libtorrent. En cuanto termina,
+  el torrent sale de la sesión para no seguir compartiendo, y si no se usa en 2 minutos el cliente
+  se apaga.
+- Mientras baja, el teléfono también sube datos a otros (así funcionan los torrents). En los ajustes
+  se puede limitar la subida (100 KB/s por defecto).
+- Si la descarga no avanza durante 3 minutos (configurable) se cancela con un aviso; suele pasar
+  con torrents viejos sin seeders.
+- Los capítulos bajados se guardan en la caché (2 GB por defecto) y se borran los más viejos.
+
+# Instalar
 
 Cada push a `main` compila la extensión con GitHub Actions y publica un repositorio de
 extensiones en la rama `repo`. En Mihon: **Más → Ajustes → Explorar → Repositorios de
@@ -50,7 +71,7 @@ https://raw.githubusercontent.com/<usuario>/<repositorio>/repo/index.min.json
 
 El APK también queda como artefacto en cada ejecución de Actions.
 
-### Firma
+## Firma
 
 Mihon solo actualiza una extensión si cada versión está firmada con la misma clave. El
 workflow necesita estos secretos del repositorio (**Settings → Secrets and variables → Actions**):
@@ -61,19 +82,23 @@ workflow necesita estos secretos del repositorio (**Settings → Secrets and var
 Para crear una clave: `keytool -genkeypair -v -keystore firma.jks -alias mihon -keyalg RSA -keysize 2048 -validity 10000`
 y luego `base64 -w0 firma.jks`.
 
-## Compilar en local
+# Compilar en local
 
 Requiere JDK 17 y el SDK de Android:
 
 ```
-./gradlew :extension:assembleRelease
+./gradlew :src:googledrive:assembleRelease :src:nyaa:assembleRelease
 ```
 
-## Notas técnicas
+# Notas técnicas
 
 - Se compila contra extensions-lib 1.4 (versión `1.4.x`), que cargan tanto Mihon estable
   como las versiones nuevas. Las interfaces de la librería están copiadas en `stubs/`
   (Apache 2.0) y no se empaquetan en el APK.
-- Las páginas se sirven con URLs internas (`http://gdrive.local/...`) que un interceptor de
+- `lib/archive` tiene el lector de CBZ/PDF que comparten las dos extensiones.
+- Nyaa incluye libtorrent4j con sus librerías nativas (arm64, arm y x86_64). Como Mihon carga las
+  extensiones sin ruta de librerías nativas, `NativeLoader` busca `libtorrent4j.so` (o lo extrae del
+  APK) y se lo indica a libtorrent4j.
+- Las páginas se sirven con URLs internas (`http://gdrive.local/...`, `http://nyaa.local/...`) que un interceptor de
   OkHttp responde sin salir a la red, extrayendo la imagen del CBZ o renderizando el PDF con
   `PdfRenderer` de Android.

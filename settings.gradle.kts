@@ -14,7 +14,9 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "mihon-gdrive"
+rootProject.name = "mihon-extensions"
 
 include(":stubs")
-include(":extension")
+include(":lib:archive")
+include(":src:googledrive")
+include(":src:nyaa")

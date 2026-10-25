@@ -39,15 +39,16 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :extension:assembleRelease --no-daemon
+        run: ./gradlew :src:googledrive:assembleRelease :src:nyaa:assembleRelease --no-daemon
 
       - name: Generar repositorio para Mihon
         if: github.event_name != 'pull_request'
         run: |
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
           python3 .github/scripts/make_repo.py \
-            --apk extension/build/outputs/apk/release/extension-release.apk \
-            --icon icon/ic_launcher-web.png \
+            --apk src/googledrive/build/outputs/apk/release/googledrive-release.apk \
+            --apk src/nyaa/build/outputs/apk/release/nyaa-release.apk \
+            --icons icon \
             --apksigner "$APKSIGNER" \
             --repo "${{ github.repository }}" \
             --out repo-out
@@ -55,7 +56,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: extension/build/outputs/apk/release/*.apk
+          path: src/*/build/outputs/apk/release/*.apk
 
       - name: Publicar en la rama "repo"
         if: github.event_name != 'pull_request'
