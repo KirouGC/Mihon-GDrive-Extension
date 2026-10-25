@@ -10,6 +10,7 @@ import okhttp3.ResponseBody.Companion.toResponseBody
  * Responde a las URL de páginas sin salir a la red:
  * - http://nyaa.local/z/<torrent>/<archivo>/<página>: imagen de un CBZ, leída por rangos
  * - http://nyaa.local/a/<torrent>/<archivo>/<página>: página de un PDF
+ * - http://nyaa.local/r/<torrent>/<archivo>/<página>: imagen de un CBR
  * - http://nyaa.local/i/<torrent>/<archivo>: imagen suelta del torrent
  */
 class LocalPageInterceptor(
@@ -38,6 +39,7 @@ class LocalPageInterceptor(
 
         const val ZIP = "z"
         const val PDF = "a"
+        const val RAR = "r"
         const val IMAGE = "i"
 
         fun pageUrl(kind: String, torrentId: String, fileIndex: Int, page: Int) = "http://$HOST/$kind/$torrentId/$fileIndex/$page"

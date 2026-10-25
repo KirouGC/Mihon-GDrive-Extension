@@ -326,7 +326,7 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
 
         Preference(screen.context).apply {
             title = t("Borrar archivos en caché", "Clear cached files")
-            summary = t("Elimina los CBZ y PDF ya descargados y el índice de mangas.", "Deletes the downloaded CBZ and PDF files and the manga index.")
+            summary = t("Elimina los CBZ, CBR y PDF ya descargados y el índice de mangas.", "Deletes the downloaded CBZ, CBR and PDF files and the manga index.")
             setOnPreferenceClickListener {
                 Thread {
                     files.clear()

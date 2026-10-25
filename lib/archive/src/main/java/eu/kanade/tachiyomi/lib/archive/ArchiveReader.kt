@@ -15,6 +15,7 @@ import java.util.zip.ZipFile
 /** Formatos de archivo que se pueden leer como capítulo. */
 enum class ArchiveKind(val code: String) {
     CBZ("cbz"),
+    CBR("cbr"),
     PDF("pdf"),
     ;
 
@@ -23,12 +24,15 @@ enum class ArchiveKind(val code: String) {
             val lower = name.lowercase(Locale.ROOT)
             return when {
                 lower.endsWith(".cbz") || lower.endsWith(".zip") -> CBZ
+                lower.endsWith(".cbr") || lower.endsWith(".rar") || mimeType in RAR_MIMES -> CBR
                 lower.endsWith(".pdf") || mimeType == "application/pdf" -> PDF
                 else -> null
             }
         }
 
         fun fromCode(code: String) = entries.first { it.code == code }
+
+        private val RAR_MIMES = setOf("application/vnd.comicbook-rar", "application/x-rar-compressed", "application/vnd.rar", "application/x-rar")
     }
 }
 
@@ -51,13 +55,18 @@ fun imageMime(name: String): String = when (name.substringAfterLast('.').lowerca
 }
 
 /**
- * Saca las páginas de un CBZ o PDF que ya está en el dispositivo: las imágenes del ZIP en
+ * Saca las páginas de un CBZ, CBR o PDF que ya está en el dispositivo: las imágenes del ZIP en
  * orden natural, o cada página del PDF renderizada a JPEG con [PdfRenderer].
+ *
+ * Un CBR se pasa una sola vez a un ZIP al lado del original ("<archivo>.zip") y se lee como CBZ.
+ * Muchos CBR en realidad ya son ZIP con otra extensión; esos se leen directamente.
  */
 class ArchiveReader(private val pdfWidth: () -> Int, private val i18n: I18n = I18n()) {
 
     private val zipEntries = ConcurrentHashMap<String, List<String>>()
     private val openPdfs = LinkedHashMap<String, OpenPdf>()
+    private val rar = RarToZip(i18n)
+    private val conversionLocks = ConcurrentHashMap<String, Any>()
 
     private class OpenPdf(val fd: ParcelFileDescriptor, val renderer: PdfRenderer) {
         fun close() {
@@ -68,22 +77,46 @@ class ArchiveReader(private val pdfWidth: () -> Int, private val i18n: I18n = I1
 
     fun pageCount(kind: ArchiveKind, file: File): Int = when (kind) {
         ArchiveKind.CBZ -> imageEntries(file).size
+        ArchiveKind.CBR -> imageEntries(asZip(file)).size
         ArchiveKind.PDF -> withPdf(file) { it.pageCount }
     }
 
     fun page(kind: ArchiveKind, file: File, index: Int): Pair<ByteArray, String> = when (kind) {
-        ArchiveKind.CBZ -> {
-            val name = imageEntries(file).getOrNull(index) ?: throw IOException(i18n.t("Página $index inexistente", "Page $index does not exist"))
-            val bytes = ZipFile(file).use { zip -> zip.getInputStream(zip.getEntry(name)).use { it.readBytes() } }
-            bytes to imageMime(name)
-        }
+        ArchiveKind.CBZ -> zipPage(file, index)
+        ArchiveKind.CBR -> zipPage(asZip(file), index)
         ArchiveKind.PDF -> withPdf(file) { renderer -> renderPdfPage(renderer, index) } to "image/jpeg"
+    }
+
+    private fun zipPage(file: File, index: Int): Pair<ByteArray, String> {
+        val name = imageEntries(file).getOrNull(index) ?: throw IOException(i18n.t("Página $index inexistente", "Page $index does not exist"))
+        val bytes = ZipFile(file).use { zip -> zip.getInputStream(zip.getEntry(name)).use { it.readBytes() } }
+        return bytes to imageMime(name)
+    }
+
+    /** Devuelve [file] si ya es un ZIP, o el ZIP convertido desde el RAR (creándolo una vez). */
+    private fun asZip(file: File): File {
+        if (isZip(file)) return file
+        val zip = convertedZip(file)
+        synchronized(conversionLocks.getOrPut(file.path) { Any() }) {
+            if (!zip.exists() || zip.lastModified() < file.lastModified()) {
+                zipEntries.remove(zip.path)
+                rar.convert(file, zip)
+            }
+        }
+        return zip
+    }
+
+    private fun isZip(file: File): Boolean = file.inputStream().use { input ->
+        val magic = ByteArray(4)
+        input.read(magic) == 4 && magic[0] == 'P'.code.toByte() && magic[1] == 'K'.code.toByte()
     }
 
     /** Olvida lo que se sabe de [file] (por ejemplo, antes de borrarlo de la caché). */
     fun forget(file: File) {
         synchronized(openPdfs) { openPdfs.remove(file.path)?.close() }
         zipEntries.remove(file.path)
+        zipEntries.remove(convertedZip(file).path)
+        convertedZip(file).delete()
     }
 
     fun closeAll() {
@@ -142,6 +175,9 @@ class ArchiveReader(private val pdfWidth: () -> Int, private val i18n: I18n = I1
     }
 
     companion object {
+        /** Dónde queda el ZIP convertido de un CBR. */
+        fun convertedZip(file: File) = File(file.path + ".zip")
+
         private const val MAX_OPEN_PDFS = 2
         private const val MAX_PDF_HEIGHT = 16384
     }

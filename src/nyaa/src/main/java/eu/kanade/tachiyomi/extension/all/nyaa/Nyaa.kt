@@ -222,7 +222,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
         runCatching { engine.warmUp(torrentId, bytes) }
         val meta = TorrentMeta.parse(bytes)
         val chapters = meta.chapters()
-        if (chapters.isEmpty()) throw IOException(t("Este torrent no tiene archivos CBZ, PDF ni imágenes", "This torrent has no CBZ, PDF or image files"))
+        if (chapters.isEmpty()) throw IOException(t("Este torrent no tiene archivos CBZ, CBR, PDF ni imágenes", "This torrent has no CBZ, CBR, PDF or image files"))
         chapters.map { ref ->
             SChapter.create().apply {
                 url = "$torrentId/${ref.kind}/${URLEncoder.encode(ref.path, "UTF-8")}"
@@ -270,11 +270,13 @@ class Nyaa : HttpSource(), ConfigurableSource {
                     prefetchZip(torrentId, bytes, index, zip, 0)
                     List(zip.entries.size) { i -> Page(i, imageUrl = LocalPageInterceptor.pageUrl(LocalPageInterceptor.ZIP, torrentId, index, i)) }
                 }
-                ArchiveKind.PDF -> {
-                    // Un PDF no se puede leer a medias: se baja entero, con toda la red enfocada en él.
+                ArchiveKind.PDF, ArchiveKind.CBR -> {
+                    // Un PDF o un RAR no se pueden leer a medias: se bajan enteros, con toda la red enfocada en ellos.
+                    val archiveKind = ArchiveKind.of(chapterPath)!!
                     val file = engine.awaitFile(torrentId, bytes, index)
-                    List(reader.pageCount(ArchiveKind.PDF, file)) { i ->
-                        Page(i, imageUrl = LocalPageInterceptor.pageUrl(LocalPageInterceptor.PDF, torrentId, index, i))
+                    val pageKind = if (archiveKind == ArchiveKind.PDF) LocalPageInterceptor.PDF else LocalPageInterceptor.RAR
+                    List(reader.pageCount(archiveKind, file)) { i ->
+                        Page(i, imageUrl = LocalPageInterceptor.pageUrl(pageKind, torrentId, index, i))
                     }
                 }
                 null -> throw IOException(t("Formato no soportado: ", "Unsupported format: ") + chapterPath)
@@ -316,6 +318,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
                 zip.read(entry) { offset, length -> engine.read(torrentId, bytes, fileIndex, offset, length) } to imageMime(entry.name)
             }
             LocalPageInterceptor.PDF -> reader.page(ArchiveKind.PDF, engine.awaitFile(torrentId, bytes, fileIndex), page!!)
+            LocalPageInterceptor.RAR -> reader.page(ArchiveKind.CBR, engine.awaitFile(torrentId, bytes, fileIndex), page!!)
             else -> {
                 val info = engine.info(torrentId, bytes)
                 val size = info.files().fileSize(fileIndex)

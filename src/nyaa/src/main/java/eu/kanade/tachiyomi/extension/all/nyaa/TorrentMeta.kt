@@ -11,7 +11,7 @@ data class TorrentFile(val path: String, val size: Long)
 class TorrentMeta(val name: String, val files: List<TorrentFile>, val created: Long) {
 
     /**
-     * Lo que se puede leer como capítulo: cada CBZ/PDF, y cada carpeta que tenga imágenes
+     * Lo que se puede leer como capítulo: cada CBZ/CBR/PDF, y cada carpeta que tenga imágenes
      * sueltas (muy común en los torrents "raw").
      */
     fun chapters(): List<ChapterRef> {
@@ -73,7 +73,7 @@ class TorrentMeta(val name: String, val files: List<TorrentFile>, val created: L
     }
 }
 
-/** Qué hay que bajar para un capítulo: un archivo CBZ/PDF o las imágenes de una carpeta. */
+/** Qué hay que bajar para un capítulo: un archivo CBZ/CBR/PDF o las imágenes de una carpeta. */
 data class ChapterRef(val kind: String, val path: String) {
     companion object {
         const val ARCHIVE = "a"
