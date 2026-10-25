@@ -8,7 +8,7 @@ Dos extensiones para [Mihon](https://mihon.app), publicadas en el mismo reposito
 - **Nyaa (Literature)**: busca en la categoría Literature de nyaa.si y lee los torrents con un
   cliente torrent integrado.
 
-Las dos leen archivos **CBZ** (y ZIP) y **PDF**; Nyaa también lee carpetas de imágenes sueltas.
+Las dos leen archivos **CBZ** (y ZIP) y **PDF**, y carpetas de imágenes numeradas (JPG/PNG/WebP…).
 Todos los textos se pueden ver en español o en inglés (ajuste **Idioma** de cada fuente; por
 defecto sigue el idioma del teléfono).
 
@@ -30,7 +30,9 @@ Después instala las extensiones desde **Explorar → Extensiones** y confía en
 | En Drive | En Mihon |
 | --- | --- |
 | Una carpeta con archivos CBZ/PDF (`Berserk/Tomo 01.cbz`, `Tomo 02.cbz`…) | Un manga; cada archivo es un capítulo |
-| Un CBZ/PDF suelto en la carpeta principal, junto a otras carpetas | Un manga de un solo capítulo |
+| Una carpeta con imágenes numeradas (`Cap 01/001.jpg`, `002.jpg`…) | Un capítulo; cada imagen es una página |
+| Una carpeta cuyas subcarpetas son capítulos de imágenes (`Solo Leveling/Cap 01/`, `Cap 02/`…) | Un manga; cada subcarpeta es un capítulo (se puede mezclar con CBZ/PDF) |
+| Un CBZ/PDF o carpeta de imágenes suelta en la carpeta principal, junto a otras carpetas | Un manga de un solo capítulo |
 | La carpeta principal solo tiene archivos (sin subcarpetas) | Un único manga con todos esos capítulos |
 
 1. En **Explorar → Fuentes → Google Drive → ⚙️**, pega el enlace de tu carpeta
@@ -41,7 +43,8 @@ Después instala las extensiones desde **Explorar → Extensiones** y confía en
 Las subcarpetas se recorren hasta 15 niveles. Como portada se usa una imagen llamada `cover`,
 `folder`, `poster` o `portada` si existe en la carpeta, si no la primera imagen, y si no la primera
 página del primer PDF. Al abrir un capítulo el archivo se descarga entero a la caché del teléfono;
-los PDF se convierten a imagen página por página en el propio teléfono.
+los PDF se convierten a imagen página por página en el propio teléfono. Los capítulos de imágenes se
+cargan imagen por imagen, ordenadas por nombre en orden natural (`2.jpg` antes que `10.jpg`).
 
 **Clave de API (recomendada).** Sin clave, la extensión lee la vista pública de cada carpeta, que
 puede no mostrar todos los archivos en carpetas muy grandes. Con una clave gratuita de la Drive API

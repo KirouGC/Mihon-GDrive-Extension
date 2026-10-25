@@ -26,6 +26,8 @@ import okhttp3.Response
 import rx.Observable
 import java.io.File
 import java.text.Normalizer
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 class GoogleDrive : HttpSource(), ConfigurableSource {
@@ -133,7 +135,7 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         title = this@toSManga.title
         thumbnail_url = cover
         description = describe(this@toSManga)
-        update_strategy = if (key.startsWith("file:")) UpdateStrategy.ONLY_FETCH_ONCE else UpdateStrategy.ALWAYS_UPDATE
+        update_strategy = if (key.startsWith("folder:")) UpdateStrategy.ALWAYS_UPDATE else UpdateStrategy.ONLY_FETCH_ONCE
         initialized = true
     }
 
@@ -151,7 +153,7 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
     override fun getMangaUrl(manga: SManga): String {
         val parts = manga.url.split(':')
         return when (parts[0]) {
-            "folder" -> "$baseUrl/drive/folders/${parts[1]}" + resourceKeyParam(parts.getOrNull(2))
+            "folder", "imgdir" -> "$baseUrl/drive/folders/${parts[1]}" + resourceKeyParam(parts.getOrNull(2))
             else -> "$baseUrl/file/d/${parts[2]}/view" + resourceKeyParam(parts.getOrNull(3))
         }
     }
@@ -160,12 +162,20 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         val parts = manga.url.split(':')
         when (parts[0]) {
             "folder" -> {
-                val folder = DriveRef(parts[1], parts.getOrNull(2))
-                api.listFolder(folder)
-                    .filter { it.kind != null }
-                    .sortedWith(compareByDescending(NaturalOrder) { it.name })
-                    .map { it.toSChapter() }
+                val children = api.listFolder(DriveRef(parts[1], parts.getOrNull(2)))
+                val archives = children.filter { it.kind != null }.map { it to it.toSChapter() }
+                val imageFolders = imageChapterFolders(children.filter { it.isFolder }).map { it to it.toImageChapter() }
+                (archives + imageFolders)
+                    .sortedWith(compareByDescending(NaturalOrder) { it.first.name })
+                    .map { it.second }
             }
+            "imgdir" -> listOf(
+                SChapter.create().apply {
+                    url = "img:" + manga.url.removePrefix("imgdir:")
+                    name = manga.title
+                    chapter_number = 1f
+                },
+            )
             else -> listOf(
                 SChapter.create().apply {
                     url = manga.url.removePrefix("file:")
@@ -182,17 +192,48 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         date_upload = modified
     }
 
+    private fun DriveItem.toImageChapter() = SChapter.create().apply {
+        url = "img:$id" + (resourceKey?.let { ":$it" } ?: "")
+        name = this@toImageChapter.name
+        date_upload = modified
+    }
+
+    /** De las subcarpetas, las que son capítulos de imágenes (se listan de a varias a la vez). */
+    private fun imageChapterFolders(folders: List<DriveItem>): List<DriveItem> {
+        if (folders.isEmpty()) return emptyList()
+        val pool = Executors.newFixedThreadPool(minOf(4, folders.size))
+        try {
+            return pool.invokeAll(folders.map { Callable { it to api.listFolder(DriveRef(it.id, it.resourceKey)) } })
+                .map { it.get() }
+                .filter { (_, children) -> MangaIndex.isImageChapter(children) }
+                .map { it.first }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
     override fun getChapterUrl(chapter: SChapter): String {
         val parts = chapter.url.split(':')
-        return "$baseUrl/file/d/${parts[1]}/view" + resourceKeyParam(parts.getOrNull(2))
+        return if (parts[0] == "img") {
+            "$baseUrl/drive/folders/${parts[1]}" + resourceKeyParam(parts.getOrNull(2))
+        } else {
+            "$baseUrl/file/d/${parts[1]}/view" + resourceKeyParam(parts.getOrNull(2))
+        }
     }
 
     // ============================== Páginas ==============================
 
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> = Observable.fromCallable {
         val parts = chapter.url.split(':')
-        val kind = ArchiveKind.fromCode(parts[0])
         val ref = DriveRef(parts[1], parts.getOrNull(2))
+        if (parts[0] == "img") {
+            val images = api.listFolder(ref).filter { it.isImage && !it.isFolder }.sortedWith(compareBy(NaturalOrder) { it.name })
+            if (images.isEmpty()) throw Exception(t("La carpeta no tiene imágenes", "The folder has no images"))
+            return@fromCallable images.mapIndexed { i, image ->
+                Page(i, imageUrl = PageInterceptor.imageUrl(DriveRef(image.id, image.resourceKey)).toString())
+            }
+        }
+        val kind = ArchiveKind.fromCode(parts[0])
         val count = files.pageCount(kind, ref)
         List(count) { i -> Page(i, imageUrl = PageInterceptor.pageUrl(kind, ref, i).toString()) }
     }

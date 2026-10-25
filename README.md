@@ -8,7 +8,7 @@ Two extensions for [Mihon](https://mihon.app), published in the same extension r
 - **Nyaa (Literature)**: searches the Literature category of nyaa.si and reads torrents with a
   built-in torrent client.
 
-Both read **CBZ** (and ZIP) and **PDF** files; Nyaa also reads folders of loose images.
+Both read **CBZ** (and ZIP) and **PDF** files, and folders of numbered images (JPG/PNG/WebP…).
 Every text can be shown in English or Spanish (setting **Language** in each source; by default
 it follows the phone's language).
 
@@ -30,7 +30,9 @@ Then install the extensions from **Browse → Extensions** and trust them when M
 | In Drive | In Mihon |
 | --- | --- |
 | A folder with CBZ/PDF files (`Berserk/Vol 01.cbz`, `Vol 02.cbz`…) | One manga; each file is a chapter |
-| A loose CBZ/PDF in the main folder, next to other folders | A one-chapter manga |
+| A folder of numbered images (`Cap 01/001.jpg`, `002.jpg`…) | A chapter; each image is a page |
+| A folder whose subfolders are image chapters (`Solo Leveling/Cap 01/`, `Cap 02/`…) | One manga; each subfolder is a chapter (can be mixed with CBZ/PDF) |
+| A loose CBZ/PDF or image folder in the main folder, next to other folders | A one-chapter manga |
 | The main folder only has files (no subfolders) | A single manga with all those chapters |
 
 1. Open **Browse → Sources → Google Drive → ⚙️** and paste your folder link
@@ -41,7 +43,8 @@ Then install the extensions from **Browse → Extensions** and trust them when M
 Subfolders are scanned up to 15 levels deep. The cover is an image called `cover`, `folder`,
 `poster` or `portada` if the folder has one, otherwise the first image, otherwise the first page
 of the first PDF. When a chapter is opened the whole file is downloaded to the phone's cache;
-PDFs are rendered page by page on the phone.
+PDFs are rendered page by page on the phone. Image chapters are loaded image by image, sorted by
+name in natural order (`2.jpg` before `10.jpg`).
 
 **API key (recommended).** Without a key the extension reads each folder's public view, which may
 not list every file in very large folders. With a free Drive API key the listing is complete:

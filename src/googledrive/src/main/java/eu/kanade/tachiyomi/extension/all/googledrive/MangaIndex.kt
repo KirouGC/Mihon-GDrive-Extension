@@ -12,8 +12,10 @@ import java.util.concurrent.Executors
 /**
  * Un manga encontrado al recorrer las carpetas.
  *
- * [key] es "folder:<id>[:<resourceKey>]" para una carpeta con capítulos, o
- * "file:<tipo>:<id>[:<resourceKey>]" para un CBZ/PDF suelto que es un manga de un solo capítulo.
+ * [key] es "folder:<id>[:<resourceKey>]" para una carpeta con capítulos (CBZ/PDF o subcarpetas
+ * de imágenes), "file:<tipo>:<id>[:<resourceKey>]" para un CBZ/PDF suelto, o
+ * "imgdir:<id>[:<resourceKey>]" para una carpeta de imágenes suelta; los dos últimos son
+ * mangas de un solo capítulo.
  */
 data class MangaEntry(
     val key: String,
@@ -53,8 +55,10 @@ class MangaIndex(
         return current?.entries?.firstOrNull { it.key == key }
     }
 
+    private class Node(val ref: DriveRef, val path: String, val isRoot: Boolean, val children: List<DriveItem>)
+
     private fun crawl(roots: List<DriveRef>): List<MangaEntry> {
-        val results = ConcurrentHashMap<String, MangaEntry>()
+        val nodes = ConcurrentHashMap<String, Node>()
         val visited = ConcurrentHashMap.newKeySet<String>()
         val pool = Executors.newFixedThreadPool(PARALLEL_REQUESTS)
         try {
@@ -67,10 +71,8 @@ class MangaIndex(
                 val next = mutableListOf<Pending>()
                 for (future in listings) {
                     val (folder, children) = future.get()
-                    val subfolders = children.filter { it.isFolder }
-                    val files = children.filter { it.kind != null }
-                    collect(folder.ref, folder.path, folder.isRoot, subfolders.isNotEmpty(), children, files, results)
-                    subfolders.filter { visited.add(it.id) }.forEach { sub ->
+                    nodes[folder.ref.id] = Node(folder.ref, folder.path, folder.isRoot, children)
+                    children.filter { it.isFolder && visited.add(it.id) }.forEach { sub ->
                         val subPath = if (folder.path.isEmpty()) sub.name else "${folder.path}/${sub.name}"
                         next += Pending(DriveRef(sub.id, sub.resourceKey), subPath, false)
                     }
@@ -81,24 +83,35 @@ class MangaIndex(
         } finally {
             pool.shutdownNow()
         }
+
+        val results = mutableMapOf<String, MangaEntry>()
+        nodes.values.forEach { classify(it, nodes, results) }
         return results.values.sortedWith(compareBy(NaturalOrder) { it.title })
     }
 
-    private fun collect(
-        folder: DriveRef,
-        path: String,
-        isRoot: Boolean,
-        hasSubfolders: Boolean,
-        children: List<DriveItem>,
-        files: List<DriveItem>,
-        results: MutableMap<String, MangaEntry>,
-    ) {
-        if (files.isEmpty()) return
+    /**
+     * Decide qué es cada carpeta: un manga cuyos capítulos son sus CBZ/PDF y sus subcarpetas de
+     * imágenes, o (en la carpeta raíz junto a carpetas de series) mangas sueltos de un capítulo.
+     */
+    private fun classify(node: Node, nodes: Map<String, Node>, results: MutableMap<String, MangaEntry>) {
+        if (isImageChapter(node.children)) {
+            // Una carpeta de imágenes es un capítulo de su carpeta padre; solo si es la raíz es un manga.
+            if (node.isRoot) {
+                val key = "imgdir:" + refKey(node.ref)
+                results[key] = MangaEntry(key, node.path.ifEmpty { "Google Drive" }, node.path, pickCover(node.children, emptyList(), emptyList()), 0, 1)
+            }
+            return
+        }
 
-        if (isRoot && hasSubfolders) {
-            // Archivos sueltos junto a carpetas de series: cada archivo es su propio manga.
-            files.forEach { file ->
-                val key = "file:${file.kind!!.code}:${file.id}" + (file.resourceKey?.let { ":$it" } ?: "")
+        val archives = node.children.filter { it.kind != null }
+        val subfolders = node.children.filter { it.isFolder }
+        val imageSubfolders = subfolders.filter { sub -> nodes[sub.id]?.let { isImageChapter(it.children) } == true }
+        if (archives.isEmpty() && imageSubfolders.isEmpty()) return
+
+        if (node.isRoot && subfolders.size > imageSubfolders.size) {
+            // Archivos y carpetas de imágenes sueltos junto a carpetas de series: cada uno es su propio manga.
+            archives.forEach { file ->
+                val key = "file:${file.kind!!.code}:" + refKey(DriveRef(file.id, file.resourceKey))
                 results[key] = MangaEntry(
                     key = key,
                     title = file.name.substringBeforeLast('.'),
@@ -108,26 +121,42 @@ class MangaIndex(
                     chapters = 1,
                 )
             }
+            imageSubfolders.forEach { sub ->
+                val key = "imgdir:" + refKey(DriveRef(sub.id, sub.resourceKey))
+                results[key] = MangaEntry(
+                    key = key,
+                    title = sub.name,
+                    path = sub.name,
+                    cover = pickCover(nodes[sub.id]!!.children, emptyList(), emptyList()),
+                    modified = sub.modified,
+                    chapters = 1,
+                )
+            }
             return
         }
 
-        val key = "folder:${folder.id}" + (folder.resourceKey?.let { ":$it" } ?: "")
-        val title = path.substringAfterLast('/').ifEmpty { path }
+        val key = "folder:" + refKey(node.ref)
+        val title = node.path.substringAfterLast('/').ifEmpty { node.path }
+        val firstChapterImages = imageSubfolders.minWithOrNull(compareBy(NaturalOrder) { it.name })
+            ?.let { nodes[it.id]?.children }.orEmpty()
         results[key] = MangaEntry(
             key = key,
-            title = title.ifEmpty { files.first().name.substringBeforeLast('.') },
-            path = path,
-            cover = pickCover(children, files),
-            modified = files.maxOf { it.modified },
-            chapters = files.size,
+            title = title.ifEmpty { (archives.firstOrNull()?.name?.substringBeforeLast('.')) ?: "Google Drive" },
+            path = node.path,
+            cover = pickCover(node.children, archives, firstChapterImages),
+            modified = (archives + imageSubfolders).maxOf { it.modified },
+            chapters = archives.size + imageSubfolders.size,
         )
     }
 
-    private fun pickCover(children: List<DriveItem>, files: List<DriveItem>): String? {
+    private fun refKey(ref: DriveRef) = ref.id + (ref.resourceKey?.let { ":$it" } ?: "")
+
+    private fun pickCover(children: List<DriveItem>, files: List<DriveItem>, chapterImages: List<DriveItem>): String? {
         val images = children.filter { it.isImage && !it.isFolder }
         val cover = images.firstOrNull { COVER_NAMES.matches(it.name) }
             ?: images.minWithOrNull(compareBy(NaturalOrder) { it.name })
             ?: files.filter { it.kind == ArchiveKind.PDF }.minWithOrNull(compareBy(NaturalOrder) { it.name })
+            ?: chapterImages.filter { it.isImage && !it.isFolder }.minWithOrNull(compareBy(NaturalOrder) { it.name })
             ?: return null
         return DriveApi.thumbnailUrl(DriveRef(cover.id, cover.resourceKey))
     }
@@ -175,5 +204,15 @@ class MangaIndex(
         private const val PARALLEL_REQUESTS = 4
         private const val MAX_DEPTH = 15
         private val COVER_NAMES = Regex("""(?i)^(cover|folder|poster|portada)\.\w+$""")
+
+        /**
+         * Una carpeta es un capítulo de imágenes si solo tiene imágenes (sin CBZ/PDF ni subcarpetas)
+         * y no es únicamente una portada.
+         */
+        fun isImageChapter(children: List<DriveItem>): Boolean {
+            if (children.any { it.isFolder || it.kind != null }) return false
+            val images = children.filter { it.isImage }
+            return images.isNotEmpty() && !(images.size == 1 && COVER_NAMES.matches(images[0].name))
+        }
     }
 }

@@ -28,6 +28,12 @@ class FileCache(
 
     fun page(kind: ArchiveKind, ref: DriveRef, index: Int): Pair<ByteArray, String> = reader.page(kind, file(ref), index)
 
+    /** Baja una imagen suelta; Mihon ya guarda en su propia caché las páginas que muestra. */
+    fun image(ref: DriveRef): Pair<ByteArray, String> = api.download(ref).use { response ->
+        val mime = response.header("Content-Type")?.substringBefore(';')?.takeIf { it.startsWith("image/") }
+        response.body.bytes() to (mime ?: "image/jpeg")
+    }
+
     /** Devuelve el archivo local, descargándolo una sola vez aunque lo pidan varias páginas a la vez. */
     private fun file(ref: DriveRef): File {
         val target = File(dir, ref.id)

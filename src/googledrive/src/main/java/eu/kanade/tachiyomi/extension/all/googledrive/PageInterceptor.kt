@@ -10,7 +10,8 @@ import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
 
 /**
- * Responde a las URL de páginas (http://gdrive.local/<cbz|pdf>/<id>/<página>?rk=<resourceKey>)
+ * Responde a las URL de páginas (http://gdrive.local/<cbz|pdf>/<id>/<página>?rk=<resourceKey>,
+ * o http://gdrive.local/img/<id> para una imagen suelta)
  * sin salir a la red: saca la imagen del CBZ o renderiza la página del PDF.
  */
 class PageInterceptor(private val files: FileCache) : Interceptor {
@@ -20,9 +21,12 @@ class PageInterceptor(private val files: FileCache) : Interceptor {
         if (request.url.host != HOST) return chain.proceed(request)
 
         val segments = request.url.pathSegments
-        val kind = ArchiveKind.fromCode(segments[0])
         val ref = DriveRef(segments[1], request.url.queryParameter("rk"))
-        val (bytes, mime) = files.page(kind, ref, segments[2].toInt())
+        val (bytes, mime) = if (segments[0] == IMAGE) {
+            files.image(ref)
+        } else {
+            files.page(ArchiveKind.fromCode(segments[0]), ref, segments[2].toInt())
+        }
 
         return Response.Builder()
             .request(request)
@@ -35,6 +39,13 @@ class PageInterceptor(private val files: FileCache) : Interceptor {
 
     companion object {
         private const val HOST = "gdrive.local"
+        private const val IMAGE = "img"
+
+        /** Una imagen suelta de Drive (página de una carpeta de imágenes). */
+        fun imageUrl(ref: DriveRef): HttpUrl =
+            "http://$HOST/$IMAGE/${ref.id}".toHttpUrl().newBuilder()
+                .apply { ref.resourceKey?.let { addQueryParameter("rk", it) } }
+                .build()
 
         fun pageUrl(kind: ArchiveKind, ref: DriveRef, index: Int): HttpUrl =
             "http://$HOST/${kind.code}/${ref.id}/$index".toHttpUrl().newBuilder()
