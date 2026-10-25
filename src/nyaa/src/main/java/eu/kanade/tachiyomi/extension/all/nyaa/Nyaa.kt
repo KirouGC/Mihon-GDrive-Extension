@@ -33,6 +33,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class Nyaa : HttpSource(), ConfigurableSource {
@@ -202,7 +203,10 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> = Observable.fromCallable {
         val torrentId = torrentIdOf(manga.url)
-        val meta = TorrentMeta.parse(torrentBytes(torrentId))
+        val bytes = torrentBytes(torrentId)
+        // Empezar a buscar peers ya, mientras el usuario elige capítulo.
+        runCatching { engine.warmUp(torrentId, bytes) }
+        val meta = TorrentMeta.parse(bytes)
         val chapters = meta.chapters()
         if (chapters.isEmpty()) throw IOException("Este torrent no tiene archivos CBZ, PDF ni imágenes")
         chapters.map { ref ->
@@ -241,36 +245,68 @@ class Nyaa : HttpSource(), ConfigurableSource {
         val info = engine.info(torrentId, bytes)
         val byPath = engine.indexByPath(info)
 
-        when (kind) {
-            ChapterRef.ARCHIVE -> {
-                val index = byPath[chapterPath] ?: throw IOException("No se encontró $chapterPath en el torrent")
-                val file = engine.download(torrentId, bytes, listOf(index)).single()
-                val archive = ArchiveKind.of(chapterPath) ?: throw IOException("Formato no soportado: $chapterPath")
-                List(reader.pageCount(archive, file)) { i ->
-                    Page(i, imageUrl = LocalPageInterceptor.archivePageUrl(torrentId, index, i))
+        if (kind == ChapterRef.ARCHIVE) {
+            val index = byPath[chapterPath] ?: throw IOException("No se encontró $chapterPath en el torrent")
+            when (ArchiveKind.of(chapterPath)) {
+                ArchiveKind.CBZ -> {
+                    // Solo hace falta el final del archivo (el índice del ZIP); las imágenes se
+                    // bajan a medida que se leen y el resto del CBZ sigue bajando de fondo.
+                    engine.want(torrentId, bytes, listOf(index))
+                    val zip = zipIndex(torrentId, bytes, index)
+                    prefetchZip(torrentId, bytes, index, zip, 0)
+                    List(zip.entries.size) { i -> Page(i, imageUrl = LocalPageInterceptor.pageUrl(LocalPageInterceptor.ZIP, torrentId, index, i)) }
                 }
+                ArchiveKind.PDF -> {
+                    // Un PDF no se puede leer a medias: se baja entero, con toda la red enfocada en él.
+                    val file = engine.awaitFile(torrentId, bytes, index)
+                    List(reader.pageCount(ArchiveKind.PDF, file)) { i ->
+                        Page(i, imageUrl = LocalPageInterceptor.pageUrl(LocalPageInterceptor.PDF, torrentId, index, i))
+                    }
+                }
+                null -> throw IOException("Formato no soportado: $chapterPath")
             }
-            else -> {
-                val images = byPath.filterKeys { it.substringBeforeLast('/', "") == chapterPath && isImageName(it) }
-                    .toSortedMap(NaturalOrder)
-                if (images.isEmpty()) throw IOException("No hay imágenes en $chapterPath")
-                engine.download(torrentId, bytes, images.values.toList())
-                images.values.mapIndexed { i, index -> Page(i, imageUrl = LocalPageInterceptor.imageUrl(torrentId, index)) }
-            }
+        } else {
+            val images = byPath.filterKeys { it.substringBeforeLast('/', "") == chapterPath && isImageName(it) }
+                .toSortedMap(NaturalOrder)
+            if (images.isEmpty()) throw IOException("No hay imágenes en $chapterPath")
+            engine.want(torrentId, bytes, images.values)
+            images.values.mapIndexed { i, index -> Page(i, imageUrl = LocalPageInterceptor.imageUrl(torrentId, index)) }
         }
     }
 
     override fun imageRequest(page: Page): Request = Request.Builder().url(page.imageUrl!!).headers(headers).build()
 
-    /** Lo llama [LocalPageInterceptor]; vuelve a bajar el archivo si se borró de la caché. */
-    private fun servePage(torrentId: String, fileIndex: Int, page: Int?): Pair<ByteArray, String> {
+    private val zipIndexes = ConcurrentHashMap<String, StreamingZip>()
+
+    private fun zipIndex(torrentId: String, bytes: ByteArray, index: Int): StreamingZip = zipIndexes.getOrPut("$torrentId/$index") {
+        val size = engine.info(torrentId, bytes).files().fileSize(index)
+        StreamingZip.open(size) { offset, length -> engine.read(torrentId, bytes, index, offset, length) }
+    }
+
+    /** Pide por adelantado las piezas de las páginas que siguen a [page]. */
+    private fun prefetchZip(torrentId: String, bytes: ByteArray, index: Int, zip: StreamingZip, page: Int) {
+        zip.entries.drop(page).take(PREFETCH_PAGES).forEachIndexed { i, entry ->
+            val range = zip.approximateRange(entry)
+            engine.prefetch(torrentId, bytes, index, range.first, range.last - range.first + 1, i * 400)
+        }
+    }
+
+    /** Lo llama [LocalPageInterceptor]; si el archivo se borró de la caché se vuelve a bajar. */
+    private fun servePage(kind: String, torrentId: String, fileIndex: Int, page: Int?): Pair<ByteArray, String> {
         val bytes = torrentBytes(torrentId)
-        val file = engine.download(torrentId, bytes, listOf(fileIndex)).single()
-        return if (page == null) {
-            file.readBytes() to imageMime(file.name)
-        } else {
-            val kind = ArchiveKind.of(file.name) ?: throw IOException("Formato no soportado: ${file.name}")
-            reader.page(kind, file, page)
+        return when (kind) {
+            LocalPageInterceptor.ZIP -> {
+                val zip = zipIndex(torrentId, bytes, fileIndex)
+                val entry = zip.entries.getOrNull(page!!) ?: throw IOException("Página $page inexistente")
+                prefetchZip(torrentId, bytes, fileIndex, zip, page + 1)
+                zip.read(entry) { offset, length -> engine.read(torrentId, bytes, fileIndex, offset, length) } to imageMime(entry.name)
+            }
+            LocalPageInterceptor.PDF -> reader.page(ArchiveKind.PDF, engine.awaitFile(torrentId, bytes, fileIndex), page!!)
+            else -> {
+                val info = engine.info(torrentId, bytes)
+                val size = info.files().fileSize(fileIndex)
+                engine.read(torrentId, bytes, fileIndex, 0, size.toInt()) to imageMime(info.files().fileName(fileIndex))
+            }
         }
     }
 
@@ -331,6 +367,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
             setOnPreferenceClickListener {
                 Thread {
                     reader.closeAll()
+                    zipIndexes.clear()
                     engine.clear()
                 }.start()
                 Toast.makeText(application, "Caché borrada", Toast.LENGTH_SHORT).show()
@@ -349,6 +386,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
         private const val DEFAULT_DOMAIN = "https://nyaa.si"
         private const val CATEGORY_ALL = "3_0"
         private const val RESULTS_PER_PAGE = 75
+        private const val PREFETCH_PAGES = 3
 
         private const val PREF_UPLOAD_KB = "upload_kb"
         private const val PREF_STALL_SECONDS = "stall_seconds"

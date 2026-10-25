@@ -8,11 +8,12 @@ import okhttp3.ResponseBody.Companion.toResponseBody
 
 /**
  * Responde a las URL de páginas sin salir a la red:
- * - http://nyaa.local/a/<torrent>/<archivo>/<página>: página de un CBZ/PDF del torrent
+ * - http://nyaa.local/z/<torrent>/<archivo>/<página>: imagen de un CBZ, leída por rangos
+ * - http://nyaa.local/a/<torrent>/<archivo>/<página>: página de un PDF
  * - http://nyaa.local/i/<torrent>/<archivo>: imagen suelta del torrent
  */
 class LocalPageInterceptor(
-    private val serve: (torrentId: String, fileIndex: Int, page: Int?) -> Pair<ByteArray, String>,
+    private val serve: (kind: String, torrentId: String, fileIndex: Int, page: Int?) -> Pair<ByteArray, String>,
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -20,8 +21,8 @@ class LocalPageInterceptor(
         if (request.url.host != HOST) return chain.proceed(request)
 
         val segments = request.url.pathSegments
-        val page = if (segments[0] == "a") segments[3].toInt() else null
-        val (bytes, mime) = serve(segments[1], segments[2].toInt(), page)
+        val page = segments.getOrNull(3)?.toInt()
+        val (bytes, mime) = serve(segments[0], segments[1], segments[2].toInt(), page)
 
         return Response.Builder()
             .request(request)
@@ -35,8 +36,12 @@ class LocalPageInterceptor(
     companion object {
         private const val HOST = "nyaa.local"
 
-        fun archivePageUrl(torrentId: String, fileIndex: Int, page: Int) = "http://$HOST/a/$torrentId/$fileIndex/$page"
+        const val ZIP = "z"
+        const val PDF = "a"
+        const val IMAGE = "i"
 
-        fun imageUrl(torrentId: String, fileIndex: Int) = "http://$HOST/i/$torrentId/$fileIndex"
+        fun pageUrl(kind: String, torrentId: String, fileIndex: Int, page: Int) = "http://$HOST/$kind/$torrentId/$fileIndex/$page"
+
+        fun imageUrl(torrentId: String, fileIndex: Int) = "http://$HOST/$IMAGE/$torrentId/$fileIndex"
     }
 }

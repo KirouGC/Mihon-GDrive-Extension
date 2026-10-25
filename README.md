@@ -50,9 +50,13 @@ archivos en carpetas muy grandes. Con una clave gratuita de la Drive API el list
   remakes/trusted y orden (recientes, seeders, descargas, tamaño). "Populares" ordena por seeders.
 - Cada torrent es un manga. Sus capítulos salen del archivo `.torrent`: cada CBZ/PDF es un capítulo,
   y también cada carpeta con imágenes sueltas.
-- Al abrir un capítulo se baja **solo ese archivo** del torrent con libtorrent. En cuanto termina,
-  el torrent sale de la sesión para no seguir compartiendo, y si no se usa en 2 minutos el cliente
-  se apaga.
+- Al abrir un manga el torrent ya se agrega (sin bajar nada) para ir encontrando peers.
+- Los CBZ se leen **en streaming**: primero se baja solo el final del archivo (el índice del ZIP),
+  después cada página pide con prioridad máxima las piezas que la contienen, y el resto del
+  capítulo sigue bajando en orden de fondo. Las carpetas de imágenes funcionan igual, imagen por
+  imagen. Los PDF sí se bajan enteros antes de abrirse.
+- Solo hay un torrent activo y solo se piden los archivos de los capítulos abiertos. Tras 5 minutos
+  sin leer, el torrent sale de la sesión y el cliente se apaga.
 - Mientras baja, el teléfono también sube datos a otros (así funcionan los torrents). En los ajustes
   se puede limitar la subida (100 KB/s por defecto).
 - Si la descarga no avanza durante 3 minutos (configurable) se cancela con un aviso; suele pasar
