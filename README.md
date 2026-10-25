@@ -1,6 +1,6 @@
 **English** · [Español](README.es.md)
 
-# Mihon extensions: Google Drive and Nyaa
+# Mihon Variety Extensions
 
 Two extensions for [Mihon](https://mihon.app), published in the same extension repository:
 
@@ -14,13 +14,13 @@ it follows the phone's language).
 
 ## Install
 
-**One tap:** open <https://kirougc.github.io/Mihon-GDrive-Extension/> on your phone and choose
+**One tap:** open <https://kirougc.github.io/Mihon-Variety-Extensions/> on your phone and choose
 *Open in Mihon*.
 
 **Or by hand:** in Mihon go to **More → Settings → Browse → Extension repos → Add** and paste:
 
 ```
-https://raw.githubusercontent.com/KirouGC/Mihon-GDrive-Extension/repo/index.min.json
+https://raw.githubusercontent.com/KirouGC/Mihon-Variety-Extensions/repo/index.min.json
 ```
 
 Then install the extensions from **Browse → Extensions** and trust them when Mihon asks.

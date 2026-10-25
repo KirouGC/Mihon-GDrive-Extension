@@ -85,7 +85,7 @@ def main() -> None:
     owner = args.repo.split("/")[0]
     repo_meta = {
         "meta": {
-            "name": f"{owner} extensions",
+            "name": "Mihon Variety Extensions",
             "shortName": owner,
             "website": f"https://github.com/{args.repo}",
             "signingKeyFingerprint": fingerprint,

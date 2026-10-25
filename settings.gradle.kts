@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "mihon-extensions"
+rootProject.name = "mihon-variety-extensions"
 
 include(":stubs")
 include(":lib:archive")
