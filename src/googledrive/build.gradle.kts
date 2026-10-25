@@ -4,7 +4,7 @@ plugins {
 }
 
 // La versión debe empezar por "1.4." para que Mihon la cargue (versión de extensions-lib).
-val extVersionCode = 2
+val extVersionCode = 3
 val libVersion = "1.4"
 
 android {

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add to Mihon</title>
+<style>
+  :root { color-scheme: light dark; --accent: #2b6cb0; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 34rem; margin: 3rem auto; padding: 0 16px; }
+  a.button { display: inline-block; background: var(--accent); color: #fff; padding: .7rem 1.2rem; border-radius: .5rem; text-decoration: none; font-weight: 600; }
+  code { word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>Add to Mihon / Agregar a Mihon</h1>
+<p><a class="button" id="add" href="#">Open in Mihon / Abrir en Mihon</a></p>
+<p>If nothing happens, copy this URL into <b>Settings → Browse → Extension repos → Add</b>.<br>
+Si no pasa nada, copia esta URL en <b>Ajustes → Explorar → Repositorios de extensiones → Agregar</b>.</p>
+<p><code id="url"></code></p>
+<script>
+  var url = "__INDEX_URL__";
+  var deeplink = "tachiyomi://add-repo?url=" + encodeURIComponent(url);
+  document.getElementById("url").textContent = url;
+  document.getElementById("add").href = deeplink;
+  window.location.href = deeplink;
+</script>
+</body>
+</html>

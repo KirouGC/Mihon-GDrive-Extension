@@ -8,6 +8,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build:
@@ -49,6 +51,7 @@ jobs:
             --apk src/googledrive/build/outputs/apk/release/googledrive-release.apk \
             --apk src/nyaa/build/outputs/apk/release/nyaa-release.apk \
             --icons icon \
+            --page .github/pages/index.html \
             --apksigner "$APKSIGNER" \
             --repo "${{ github.repository }}" \
             --out repo-out
@@ -67,3 +70,23 @@ jobs:
           publish_dir: repo-out
           force_orphan: true
           commit_message: Actualizar repositorio de extensiones
+
+      - name: Preparar GitHub Pages
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo-out
+
+  # Publica la página "Agregar a Mihon". Requiere activar Pages con origen "GitHub Actions";
+  # si no está activado, este paso falla sin afectar al repositorio de extensiones.
+  pages:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

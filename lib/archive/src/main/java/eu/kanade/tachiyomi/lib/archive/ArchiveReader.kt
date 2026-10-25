@@ -54,7 +54,7 @@ fun imageMime(name: String): String = when (name.substringAfterLast('.').lowerca
  * Saca las páginas de un CBZ o PDF que ya está en el dispositivo: las imágenes del ZIP en
  * orden natural, o cada página del PDF renderizada a JPEG con [PdfRenderer].
  */
-class ArchiveReader(private val pdfWidth: () -> Int) {
+class ArchiveReader(private val pdfWidth: () -> Int, private val i18n: I18n = I18n()) {
 
     private val zipEntries = ConcurrentHashMap<String, List<String>>()
     private val openPdfs = LinkedHashMap<String, OpenPdf>()
@@ -73,7 +73,7 @@ class ArchiveReader(private val pdfWidth: () -> Int) {
 
     fun page(kind: ArchiveKind, file: File, index: Int): Pair<ByteArray, String> = when (kind) {
         ArchiveKind.CBZ -> {
-            val name = imageEntries(file).getOrNull(index) ?: throw IOException("Página $index inexistente")
+            val name = imageEntries(file).getOrNull(index) ?: throw IOException(i18n.t("Página $index inexistente", "Page $index does not exist"))
             val bytes = ZipFile(file).use { zip -> zip.getInputStream(zip.getEntry(name)).use { it.readBytes() } }
             bytes to imageMime(name)
         }
@@ -101,7 +101,7 @@ class ArchiveReader(private val pdfWidth: () -> Int) {
                 .map { it.name }
                 .sortedWith(NaturalOrder)
                 .toList()
-        }.ifEmpty { throw IOException("El CBZ no contiene imágenes") }
+        }.ifEmpty { throw IOException(i18n.t("El CBZ no contiene imágenes", "The CBZ has no images")) }
     }
 
     private fun <T> withPdf(file: File, block: (PdfRenderer) -> T): T {
@@ -122,7 +122,7 @@ class ArchiveReader(private val pdfWidth: () -> Int) {
     }
 
     private fun renderPdfPage(renderer: PdfRenderer, index: Int): ByteArray {
-        if (index !in 0 until renderer.pageCount) throw IOException("Página $index inexistente")
+        if (index !in 0 until renderer.pageCount) throw IOException(i18n.t("Página $index inexistente", "Page $index does not exist"))
         renderer.openPage(index).use { page ->
             val width = pdfWidth()
             val scale = width.toFloat() / page.width

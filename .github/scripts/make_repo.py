@@ -40,6 +40,7 @@ def main() -> None:
     parser.add_argument("--apksigner", required=True)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument("--page", help="plantilla HTML de la página para agregar el repo a Mihon")
     args = parser.parse_args()
 
     aapt2 = str(Path(args.apksigner).parent / "aapt2")
@@ -84,13 +85,17 @@ def main() -> None:
     owner = args.repo.split("/")[0]
     repo_meta = {
         "meta": {
-            "name": f"Extensiones de {owner}",
+            "name": f"{owner} extensions",
             "shortName": owner,
             "website": f"https://github.com/{args.repo}",
             "signingKeyFingerprint": fingerprint,
         },
     }
     (out / "repo.json").write_text(json.dumps(repo_meta, indent=2, ensure_ascii=False))
+
+    if args.page:
+        index_url = f"https://raw.githubusercontent.com/{args.repo}/repo/index.min.json"
+        (out / "index.html").write_text(Path(args.page).read_text().replace("__INDEX_URL__", index_url))
 
 
 if __name__ == "__main__":

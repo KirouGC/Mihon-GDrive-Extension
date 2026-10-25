@@ -20,7 +20,7 @@ class StreamingZip private constructor(val entries: List<Entry>) {
 
     fun read(entry: Entry, read: (offset: Long, length: Int) -> ByteArray): ByteArray {
         val header = read(entry.localOffset, LOCAL_HEADER)
-        if (header.u32(0) != LOCAL_SIG) throw IOException("CBZ dañado: cabecera local inválida")
+        if (header.u32(0) != LOCAL_SIG) throw IOException(t("CBZ dañado: cabecera local inválida", "Damaged CBZ: invalid local header"))
         val dataStart = entry.localOffset + LOCAL_HEADER + header.u16(26) + header.u16(28)
         val data = read(dataStart, entry.compressedSize.toIntExact())
         return when (entry.method) {
@@ -40,7 +40,7 @@ class StreamingZip private constructor(val entries: List<Entry>) {
                     end()
                 }
             }
-            else -> throw IOException("Compresión ZIP no soportada (método ${entry.method})")
+            else -> throw IOException(t("Compresión ZIP no soportada", "Unsupported ZIP compression") + " (${entry.method})")
         }
     }
 
@@ -60,16 +60,16 @@ class StreamingZip private constructor(val entries: List<Entry>) {
             val tailStart = size - tailLength
             val tail = read(tailStart, tailLength)
             val eocd = (tail.size - 22 downTo 0).firstOrNull { tail.u32(it) == EOCD_SIG }
-                ?: throw IOException("CBZ dañado: no se encontró el directorio central")
+                ?: throw IOException(t("CBZ dañado: no se encontró el directorio central", "Damaged CBZ: central directory not found"))
 
             var count = tail.u16(eocd + 10).toLong()
             var cdSize = tail.u32(eocd + 12)
             var cdOffset = tail.u32(eocd + 16)
             if (cdOffset == 0xFFFFFFFFL || cdSize == 0xFFFFFFFFL || count == 0xFFFFL) {
                 val locator = eocd - 20
-                if (locator < 0 || tail.u32(locator) != ZIP64_LOCATOR_SIG) throw IOException("ZIP64 sin localizador")
+                if (locator < 0 || tail.u32(locator) != ZIP64_LOCATOR_SIG) throw IOException(t("ZIP64 sin localizador", "ZIP64 without locator"))
                 val zip64 = read(tail.u64(locator + 8), 56)
-                if (zip64.u32(0) != ZIP64_EOCD_SIG) throw IOException("ZIP64 dañado")
+                if (zip64.u32(0) != ZIP64_EOCD_SIG) throw IOException(t("ZIP64 dañado", "Damaged ZIP64"))
                 count = zip64.u64(32)
                 cdSize = zip64.u64(40)
                 cdOffset = zip64.u64(48)
@@ -108,7 +108,7 @@ class StreamingZip private constructor(val entries: List<Entry>) {
                 }
                 p += 46 + nameLength + extraLength + commentLength
             }
-            if (entries.isEmpty()) throw IOException("El CBZ no contiene imágenes")
+            if (entries.isEmpty()) throw IOException(t("El CBZ no contiene imágenes", "The CBZ has no images"))
             return StreamingZip(entries.sortedWith(compareBy(NaturalOrder) { it.name }))
         }
 
@@ -119,7 +119,7 @@ class StreamingZip private constructor(val entries: List<Entry>) {
         private fun ByteArray.u64(i: Int) = u32(i) or (u32(i + 4) shl 32)
 
         private fun Long.toIntExact(): Int {
-            if (this > Int.MAX_VALUE) throw IOException("Entrada ZIP demasiado grande")
+            if (this > Int.MAX_VALUE) throw IOException(t("Entrada ZIP demasiado grande", "ZIP entry too large"))
             return toInt()
         }
     }

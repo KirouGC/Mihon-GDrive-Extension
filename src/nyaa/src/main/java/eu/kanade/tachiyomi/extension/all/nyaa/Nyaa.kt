@@ -10,6 +10,7 @@ import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.lib.archive.ArchiveKind
 import eu.kanade.tachiyomi.lib.archive.ArchiveReader
+import eu.kanade.tachiyomi.lib.archive.I18n
 import eu.kanade.tachiyomi.lib.archive.NaturalOrder
 import eu.kanade.tachiyomi.lib.archive.imageMime
 import eu.kanade.tachiyomi.lib.archive.isImageName
@@ -56,10 +57,12 @@ class Nyaa : HttpSource(), ConfigurableSource {
     override val baseUrl: String
         get() = preferences.getString(PREF_DOMAIN, DEFAULT_DOMAIN)!!.trim().trimEnd('/').ifEmpty { DEFAULT_DOMAIN }
 
+    private val i18n = I18n { preferences.getString(I18n.PREF_KEY, I18n.AUTO)!! }.also { Texts.i18n = it }
+
     private val cacheRoot by lazy { File(application.cacheDir, "nyaa") }
 
     private val reader by lazy {
-        ArchiveReader { preferences.getString(PREF_PDF_WIDTH, "1440")!!.toIntOrNull() ?: 1440 }
+        ArchiveReader({ preferences.getString(PREF_PDF_WIDTH, "1440")!!.toIntOrNull() ?: 1440 }, i18n)
     }
 
     private val engine by lazy {
@@ -121,7 +124,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
                 url = link.attr("href").substringBefore('#')
                 title = link.attr("title").ifEmpty { link.text() }
                 description = listOfNotNull(
-                    cells.getOrNull(3)?.text()?.let { "Tamaño: $it" },
+                    cells.getOrNull(3)?.text()?.let { t("Tamaño: ", "Size: ") + it },
                     cells.getOrNull(5)?.text()?.let { "Seeders: $it" },
                 ).joinToString(" · ")
                 update_strategy = UpdateStrategy.ONLY_FETCH_ONCE
@@ -142,23 +145,28 @@ class Nyaa : HttpSource(), ConfigurableSource {
     }
 
     private class CategoryFilter : ValueFilter(
-        "Categoría",
+        t("Categoría", "Category"),
         arrayOf(
-            "Toda Literature" to CATEGORY_ALL,
-            "Traducido al inglés" to "3_1",
-            "Traducido a otro idioma" to "3_2",
-            "Raw (sin traducir)" to "3_3",
+            t("Toda Literature", "All Literature") to CATEGORY_ALL,
+            t("Traducido al inglés", "English-translated") to "3_1",
+            t("Traducido a otro idioma", "Non-English-translated") to "3_2",
+            t("Raw (sin traducir)", "Raw") to "3_3",
         ),
     )
 
     private class QualityFilter : ValueFilter(
-        "Filtro",
-        arrayOf("Todos" to "0", "Sin remakes" to "1", "Solo trusted" to "2"),
+        t("Filtro", "Filter"),
+        arrayOf(t("Todos", "No filter") to "0", t("Sin remakes", "No remakes") to "1", t("Solo trusted", "Trusted only") to "2"),
     )
 
     private class SortFilter : ValueFilter(
-        "Ordenar por",
-        arrayOf("Más recientes" to "id", "Seeders" to "seeders", "Descargas" to "downloads", "Tamaño" to "size"),
+        t("Ordenar por", "Sort by"),
+        arrayOf(
+            t("Más recientes", "Most recent") to "id",
+            "Seeders" to "seeders",
+            t("Descargas", "Downloads") to "downloads",
+            t("Tamaño", "Size") to "size",
+        ),
     )
 
     // ============================== Manga ==============================
@@ -173,7 +181,13 @@ class Nyaa : HttpSource(), ConfigurableSource {
             genre = info["Category"]?.replace(" - ", ", ")
             thumbnail_url = IMAGE_URL.find(descriptionText)?.groupValues?.get(1)
             description = buildString {
-                listOf("File size" to "Tamaño", "Seeders" to "Seeders", "Leechers" to "Leechers", "Completed" to "Descargas", "Date" to "Fecha")
+                listOf(
+                    "File size" to t("Tamaño", "Size"),
+                    "Seeders" to "Seeders",
+                    "Leechers" to "Leechers",
+                    "Completed" to t("Descargas", "Downloads"),
+                    "Date" to t("Fecha", "Date"),
+                )
                     .forEach { (key, label) -> info[key]?.let { append(label).append(": ").append(it).append('\n') } }
                 if (descriptionText.isNotEmpty() && descriptionText != "#### No description.") {
                     append('\n').append(descriptionText)
@@ -208,7 +222,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
         runCatching { engine.warmUp(torrentId, bytes) }
         val meta = TorrentMeta.parse(bytes)
         val chapters = meta.chapters()
-        if (chapters.isEmpty()) throw IOException("Este torrent no tiene archivos CBZ, PDF ni imágenes")
+        if (chapters.isEmpty()) throw IOException(t("Este torrent no tiene archivos CBZ, PDF ni imágenes", "This torrent has no CBZ, PDF or image files"))
         chapters.map { ref ->
             SChapter.create().apply {
                 url = "$torrentId/${ref.kind}/${URLEncoder.encode(ref.path, "UTF-8")}"
@@ -229,8 +243,8 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
         val response = network.client.newCall(Request.Builder().url("$baseUrl/download/$torrentId.torrent").headers(headers).build()).execute()
         val bytes = response.use { if (it.isSuccessful) it.body.bytes() else null }
-            ?: throw IOException("Nyaa no tiene el archivo .torrent de este torrent (HTTP ${response.code})")
-        if (bytes.firstOrNull() != 'd'.code.toByte()) throw IOException("Nyaa no devolvió un archivo .torrent válido")
+            ?: throw IOException(t("Nyaa no tiene el archivo .torrent de este torrent", "Nyaa has no .torrent file for this torrent") + " (HTTP ${response.code})")
+        if (bytes.firstOrNull() != 'd'.code.toByte()) throw IOException(t("Nyaa no devolvió un archivo .torrent válido", "Nyaa did not return a valid .torrent file"))
         file.parentFile?.mkdirs()
         file.writeBytes(bytes)
         return bytes
@@ -246,7 +260,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
         val byPath = engine.indexByPath(info)
 
         if (kind == ChapterRef.ARCHIVE) {
-            val index = byPath[chapterPath] ?: throw IOException("No se encontró $chapterPath en el torrent")
+            val index = byPath[chapterPath] ?: throw IOException(t("No se encontró en el torrent: ", "Not found in the torrent: ") + chapterPath)
             when (ArchiveKind.of(chapterPath)) {
                 ArchiveKind.CBZ -> {
                     // Solo hace falta el final del archivo (el índice del ZIP); las imágenes se
@@ -263,12 +277,12 @@ class Nyaa : HttpSource(), ConfigurableSource {
                         Page(i, imageUrl = LocalPageInterceptor.pageUrl(LocalPageInterceptor.PDF, torrentId, index, i))
                     }
                 }
-                null -> throw IOException("Formato no soportado: $chapterPath")
+                null -> throw IOException(t("Formato no soportado: ", "Unsupported format: ") + chapterPath)
             }
         } else {
             val images = byPath.filterKeys { it.substringBeforeLast('/', "") == chapterPath && isImageName(it) }
                 .toSortedMap(NaturalOrder)
-            if (images.isEmpty()) throw IOException("No hay imágenes en $chapterPath")
+            if (images.isEmpty()) throw IOException(t("No hay imágenes en ", "No images in ") + chapterPath)
             engine.want(torrentId, bytes, images.values)
             images.values.mapIndexed { i, index -> Page(i, imageUrl = LocalPageInterceptor.imageUrl(torrentId, index)) }
         }
@@ -297,7 +311,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
         return when (kind) {
             LocalPageInterceptor.ZIP -> {
                 val zip = zipIndex(torrentId, bytes, fileIndex)
-                val entry = zip.entries.getOrNull(page!!) ?: throw IOException("Página $page inexistente")
+                val entry = zip.entries.getOrNull(page!!) ?: throw IOException(t("Página $page inexistente", "Page $page does not exist"))
                 prefetchZip(torrentId, bytes, fileIndex, zip, page + 1)
                 zip.read(entry) { offset, length -> engine.read(torrentId, bytes, fileIndex, offset, length) } to imageMime(entry.name)
             }
@@ -314,10 +328,22 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         ListPreference(screen.context).apply {
+            key = I18n.PREF_KEY
+            title = t("Idioma / Language", "Language / Idioma")
+            entries = I18n.ENTRIES
+            entryValues = I18n.VALUES
+            summary = t("%s\nVuelve a abrir esta pantalla para ver el cambio.", "%s\nReopen this screen to see the change.")
+            setDefaultValue(I18n.AUTO)
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
             key = PREF_UPLOAD_KB
-            title = "Límite de subida"
-            summary = "Mientras baja un capítulo el teléfono también comparte con otros. Con un límite muy bajo la descarga puede ir más lenta.\n%s"
-            entries = arrayOf("10 KB/s", "50 KB/s", "100 KB/s", "500 KB/s", "Sin límite")
+            title = t("Límite de subida", "Upload limit")
+            summary = t(
+                "Mientras baja un capítulo el teléfono también comparte con otros. Con un límite muy bajo la descarga puede ir más lenta.\n%s",
+                "While a chapter downloads the phone also shares it with others. A very low limit can slow the download down.\n%s",
+            )
+            entries = arrayOf("10 KB/s", "50 KB/s", "100 KB/s", "500 KB/s", t("Sin límite", "Unlimited"))
             entryValues = arrayOf("10", "50", "100", "500", "0")
             setDefaultValue("100")
             setOnPreferenceChangeListener { _, _ ->
@@ -328,8 +354,8 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
         ListPreference(screen.context).apply {
             key = PREF_STALL_SECONDS
-            title = "Cancelar si la descarga no avanza en"
-            entries = arrayOf("1 minuto", "3 minutos", "10 minutos", "30 minutos")
+            title = t("Cancelar si la descarga no avanza en", "Cancel if the download stalls for")
+            entries = arrayOf(t("1 minuto", "1 minute"), t("3 minutos", "3 minutes"), t("10 minutos", "10 minutes"), t("30 minutos", "30 minutes"))
             entryValues = arrayOf("60", "180", "600", "1800")
             summary = "%s"
             setDefaultValue("180")
@@ -337,7 +363,7 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
         ListPreference(screen.context).apply {
             key = PREF_CACHE_MB
-            title = "Espacio para capítulos bajados"
+            title = t("Espacio para capítulos bajados", "Space for downloaded chapters")
             entries = arrayOf("512 MB", "1 GB", "2 GB", "5 GB", "10 GB")
             entryValues = arrayOf("512", "1024", "2048", "5120", "10240")
             summary = "%s"
@@ -346,8 +372,13 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
         ListPreference(screen.context).apply {
             key = PREF_PDF_WIDTH
-            title = "Calidad de las páginas PDF"
-            entries = arrayOf("Baja (1080 px)", "Media (1440 px)", "Alta (2048 px)", "Muy alta (2560 px)")
+            title = t("Calidad de las páginas PDF", "PDF page quality")
+            entries = arrayOf(
+                t("Baja (1080 px)", "Low (1080 px)"),
+                t("Media (1440 px)", "Medium (1440 px)"),
+                t("Alta (2048 px)", "High (2048 px)"),
+                t("Muy alta (2560 px)", "Very high (2560 px)"),
+            )
             entryValues = arrayOf("1080", "1440", "2048", "2560")
             summary = "%s"
             setDefaultValue("1440")
@@ -355,22 +386,25 @@ class Nyaa : HttpSource(), ConfigurableSource {
 
         EditTextPreference(screen.context).apply {
             key = PREF_DOMAIN
-            title = "Dirección de Nyaa"
-            summary = "Por defecto $DEFAULT_DOMAIN. Cámbiala solo si usas un espejo."
+            title = t("Dirección de Nyaa", "Nyaa address")
+            summary = t("Por defecto $DEFAULT_DOMAIN. Cámbiala solo si usas un espejo.", "Default $DEFAULT_DOMAIN. Change it only if you use a mirror.")
             dialogTitle = title
             setDefaultValue(DEFAULT_DOMAIN)
         }.also(screen::addPreference)
 
         Preference(screen.context).apply {
-            title = "Borrar capítulos descargados"
-            summary = "Elimina los archivos bajados por torrent (no los de la sección Descargas de Mihon)."
+            title = t("Borrar capítulos descargados", "Clear downloaded chapters")
+            summary = t(
+                "Elimina los archivos bajados por torrent (no los de la sección Descargas de Mihon).",
+                "Deletes the files downloaded by torrent (not the ones in Mihon's Downloads).",
+            )
             setOnPreferenceClickListener {
                 Thread {
                     reader.closeAll()
                     zipIndexes.clear()
                     engine.clear()
                 }.start()
-                Toast.makeText(application, "Caché borrada", Toast.LENGTH_SHORT).show()
+                Toast.makeText(application, t("Caché borrada", "Cache cleared"), Toast.LENGTH_SHORT).show()
                 true
             }
         }.also(screen::addPreference)

@@ -9,6 +9,7 @@ import androidx.preference.ListPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.lib.archive.ArchiveKind
+import eu.kanade.tachiyomi.lib.archive.I18n
 import eu.kanade.tachiyomi.lib.archive.NaturalOrder
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -46,9 +47,13 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         application.getSharedPreferences("source_$id", Context.MODE_PRIVATE)
     }
 
+    private val i18n = I18n { preferences.getString(I18n.PREF_KEY, I18n.AUTO)!! }
+
+    private fun t(es: String, en: String) = i18n.t(es, en)
+
     private val cacheRoot by lazy { File(application.cacheDir, "googledrive") }
 
-    private val api by lazy { DriveApi(network.client, headers) { preferences.getString(PREF_API_KEY, "").orEmpty().trim() } }
+    private val api by lazy { DriveApi(network.client, headers, { preferences.getString(PREF_API_KEY, "").orEmpty().trim() }, i18n) }
 
     private val index by lazy { MangaIndex(api, File(cacheRoot, "index.json")) }
 
@@ -58,6 +63,7 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
             dir = File(cacheRoot, "files"),
             maxBytes = { (preferences.getString(PREF_CACHE_MB, "1024")!!.toLongOrNull() ?: 1024L) * 1024 * 1024 },
             pdfWidth = { preferences.getString(PREF_PDF_WIDTH, "1440")!!.toIntOrNull() ?: 1440 },
+            i18n = i18n,
         )
     }
 
@@ -98,19 +104,19 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         }
 
     override fun getFilterList() = FilterList(
-        SortFilter(),
-        RescanFilter(),
-        Filter.Header("Volver a escanear tarda más con carpetas grandes."),
+        SortFilter(t("Ordenar por", "Sort by"), arrayOf(t("Nombre", "Name"), t("Más recientes", "Most recent"))),
+        RescanFilter(t("Volver a escanear las carpetas de Drive", "Rescan the Drive folders")),
+        Filter.Header(t("Volver a escanear tarda más con carpetas grandes.", "Rescanning takes longer with large folders.")),
     )
 
-    private class SortFilter : Filter.Select<String>("Ordenar por", arrayOf("Nombre", "Más recientes"))
+    private class SortFilter(name: String, values: Array<String>) : Filter.Select<String>(name, values)
 
-    private class RescanFilter : Filter.CheckBox("Volver a escanear las carpetas de Drive")
+    private class RescanFilter(name: String) : Filter.CheckBox(name)
 
     private fun loadIndex(force: Boolean): List<MangaEntry> {
         val roots = roots
         if (roots.isEmpty()) {
-            throw Exception("Pega el enlace de tu carpeta de Drive en los ajustes de la extensión")
+            throw Exception(t("Pega el enlace de tu carpeta de Drive en los ajustes de la extensión", "Paste your Drive folder link in the extension settings"))
         }
         val hours = preferences.getString(PREF_REFRESH_HOURS, "24")!!.toLongOrNull() ?: 24L
         val maxAge = if (hours < 0) -1 else TimeUnit.HOURS.toMillis(hours)
@@ -132,8 +138,8 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
     }
 
     private fun describe(entry: MangaEntry): String = buildString {
-        if (entry.path.isNotEmpty()) append("Carpeta: ").append(entry.path)
-        if (entry.chapters > 1) append("\n").append(entry.chapters).append(" archivos")
+        if (entry.path.isNotEmpty()) append(t("Carpeta: ", "Folder: ")).append(entry.path)
+        if (entry.chapters > 1) append("\n").append(entry.chapters).append(t(" archivos", " files"))
     }.trim()
 
     // ============================== Manga ==============================
@@ -201,32 +207,54 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
     // ============================== Ajustes ==============================
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        ListPreference(screen.context).apply {
+            key = I18n.PREF_KEY
+            title = t("Idioma / Language", "Language / Idioma")
+            entries = I18n.ENTRIES
+            entryValues = I18n.VALUES
+            summary = t("%s\nVuelve a abrir esta pantalla para ver el cambio.", "%s\nReopen this screen to see the change.")
+            setDefaultValue(I18n.AUTO)
+        }.also(screen::addPreference)
+
         EditTextPreference(screen.context).apply {
             key = PREF_FOLDERS
-            title = "Carpetas de Google Drive"
-            summary = "Enlaces de carpetas compartidas por enlace, uno por línea. Se buscan mangas en todas sus subcarpetas."
+            title = t("Carpetas de Google Drive", "Google Drive folders")
+            summary = t(
+                "Enlaces de carpetas compartidas por enlace, uno por línea. Se buscan mangas en todas sus subcarpetas.",
+                "Links to folders shared by link, one per line. Manga is searched in all their subfolders.",
+            )
             dialogTitle = title
             setDefaultValue("")
             setOnPreferenceChangeListener { _, value ->
                 val count = value.toString().split('\n', ',', ' ').count { DriveRef.parse(it) != null }
-                toast(if (count == 0) "No se reconoció ningún enlace de Drive" else "Carpetas: $count. Vuelve a abrir la fuente.")
+                toast(if (count == 0) t("No se reconoció ningún enlace de Drive", "No Drive link was recognized") else t("Carpetas: $count. Vuelve a abrir la fuente.", "Folders: $count. Reopen the source."))
                 true
             }
         }.also(screen::addPreference)
 
         EditTextPreference(screen.context).apply {
             key = PREF_API_KEY
-            title = "Clave de API de Google (recomendada)"
-            summary = "Opcional. Con una clave de la Drive API las carpetas grandes se listan completas y más rápido. " +
-                "Sin clave se usa la vista pública de la carpeta."
+            title = t("Clave de API de Google (recomendada)", "Google API key (recommended)")
+            summary = t(
+                "Opcional. Con una clave de la Drive API las carpetas grandes se listan completas y más rápido. " +
+                    "Sin clave se usa la vista pública de la carpeta.",
+                "Optional. With a Drive API key large folders are listed completely and faster. " +
+                    "Without a key the folder's public view is used.",
+            )
             dialogTitle = title
             setDefaultValue("")
         }.also(screen::addPreference)
 
         ListPreference(screen.context).apply {
             key = PREF_REFRESH_HOURS
-            title = "Volver a escanear automáticamente"
-            entries = arrayOf("Cada hora", "Cada 6 horas", "Cada día", "Cada semana", "Solo a mano (filtro)")
+            title = t("Volver a escanear automáticamente", "Rescan automatically")
+            entries = arrayOf(
+                t("Cada hora", "Every hour"),
+                t("Cada 6 horas", "Every 6 hours"),
+                t("Cada día", "Every day"),
+                t("Cada semana", "Every week"),
+                t("Solo a mano (filtro)", "Manually only (filter)"),
+            )
             entryValues = arrayOf("1", "6", "24", "168", "-1")
             summary = "%s"
             setDefaultValue("24")
@@ -234,8 +262,13 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
 
         ListPreference(screen.context).apply {
             key = PREF_PDF_WIDTH
-            title = "Calidad de las páginas PDF"
-            entries = arrayOf("Baja (1080 px)", "Media (1440 px)", "Alta (2048 px)", "Muy alta (2560 px)")
+            title = t("Calidad de las páginas PDF", "PDF page quality")
+            entries = arrayOf(
+                t("Baja (1080 px)", "Low (1080 px)"),
+                t("Media (1440 px)", "Medium (1440 px)"),
+                t("Alta (2048 px)", "High (2048 px)"),
+                t("Muy alta (2560 px)", "Very high (2560 px)"),
+            )
             entryValues = arrayOf("1080", "1440", "2048", "2560")
             summary = "%s"
             setDefaultValue("1440")
@@ -243,7 +276,7 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
 
         ListPreference(screen.context).apply {
             key = PREF_CACHE_MB
-            title = "Espacio para archivos descargados"
+            title = t("Espacio para archivos descargados", "Space for downloaded files")
             entries = arrayOf("256 MB", "512 MB", "1 GB", "2 GB", "5 GB")
             entryValues = arrayOf("256", "512", "1024", "2048", "5120")
             summary = "%s"
@@ -251,14 +284,14 @@ class GoogleDrive : HttpSource(), ConfigurableSource {
         }.also(screen::addPreference)
 
         Preference(screen.context).apply {
-            title = "Borrar archivos en caché"
-            summary = "Elimina los CBZ y PDF ya descargados y el índice de mangas."
+            title = t("Borrar archivos en caché", "Clear cached files")
+            summary = t("Elimina los CBZ y PDF ya descargados y el índice de mangas.", "Deletes the downloaded CBZ and PDF files and the manga index.")
             setOnPreferenceClickListener {
                 Thread {
                     files.clear()
                     File(cacheRoot, "index.json").delete()
                 }.start()
-                toast("Caché borrada")
+                toast(t("Caché borrada", "Cache cleared"))
                 true
             }
         }.also(screen::addPreference)

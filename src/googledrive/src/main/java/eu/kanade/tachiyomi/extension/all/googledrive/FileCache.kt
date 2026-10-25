@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.all.googledrive
 
 import eu.kanade.tachiyomi.lib.archive.ArchiveKind
 import eu.kanade.tachiyomi.lib.archive.ArchiveReader
+import eu.kanade.tachiyomi.lib.archive.I18n
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -17,9 +18,10 @@ class FileCache(
     private val dir: File,
     private val maxBytes: () -> Long,
     pdfWidth: () -> Int,
+    private val i18n: I18n,
 ) {
     private val locks = ConcurrentHashMap<String, Any>()
-    private val reader = ArchiveReader(pdfWidth)
+    private val reader = ArchiveReader(pdfWidth, i18n)
 
     /** Número de páginas del archivo; lo descarga si hace falta. */
     fun pageCount(kind: ArchiveKind, ref: DriveRef): Int = reader.pageCount(kind, file(ref))
@@ -39,7 +41,7 @@ class FileCache(
             api.download(ref).use { response ->
                 partial.outputStream().use { out -> response.body.byteStream().copyTo(out) }
             }
-            if (!partial.renameTo(target)) throw IOException("No se pudo guardar ${ref.id} en la caché")
+            if (!partial.renameTo(target)) throw IOException(i18n.t("No se pudo guardar ${ref.id} en la caché", "Could not save ${ref.id} to the cache"))
             trim(keep = target)
             return target
         }

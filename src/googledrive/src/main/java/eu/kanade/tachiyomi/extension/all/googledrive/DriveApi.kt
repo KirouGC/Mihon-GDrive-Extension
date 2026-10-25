@@ -1,6 +1,7 @@
 package eu.kanade.tachiyomi.extension.all.googledrive
 
 import eu.kanade.tachiyomi.lib.archive.ArchiveKind
+import eu.kanade.tachiyomi.lib.archive.I18n
 import eu.kanade.tachiyomi.lib.archive.isImageName
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -67,6 +68,7 @@ class DriveApi(
     private val client: OkHttpClient,
     private val headers: Headers,
     private val apiKey: () -> String,
+    private val i18n: I18n,
 ) {
 
     fun listFolder(folder: DriveRef): List<DriveItem> {
@@ -167,20 +169,20 @@ class DriveApi(
         val response = client.newCall(Request.Builder().url(url).headers(headers).build()).execute()
         if (!response.isSuccessful) {
             response.close()
-            throw IOException("Drive respondió HTTP ${response.code} al descargar ${file.id}")
+            throw IOException(i18n.t("Drive respondió HTTP ${response.code} al descargar ${file.id}", "Drive answered HTTP ${response.code} when downloading ${file.id}"))
         }
         if (response.header("Content-Type").orEmpty().startsWith("text/html")) {
             // Página de "no se puede analizar en busca de virus": reenviar su formulario.
             val html = response.use { it.body.string() }
             val form = Jsoup.parse(html, url.toString()).selectFirst("form#download-form, form[action*=download]")
-                ?: throw IOException("Drive no permite descargar este archivo (¿está compartido por enlace?)")
+                ?: throw IOException(i18n.t("Drive no permite descargar este archivo (¿está compartido por enlace?)", "Drive does not allow downloading this file (is it shared by link?)"))
             val confirmUrl = form.absUrl("action").toHttpUrl().newBuilder().apply {
                 form.select("input[type=hidden]").forEach { addQueryParameter(it.attr("name"), it.attr("value")) }
             }.build()
             val confirmed = client.newCall(Request.Builder().url(confirmUrl).headers(headers).build()).execute()
             if (!confirmed.isSuccessful || confirmed.header("Content-Type").orEmpty().startsWith("text/html")) {
                 confirmed.close()
-                throw IOException("Drive no permite descargar este archivo (límite de descargas o permisos)")
+                throw IOException(i18n.t("Drive no permite descargar este archivo (límite de descargas o permisos)", "Drive does not allow downloading this file (download quota or permissions)"))
             }
             return confirmed
         }

@@ -33,8 +33,8 @@ class TorrentMeta(val name: String, val files: List<TorrentFile>, val created: L
 
     companion object {
         fun parse(bytes: ByteArray): TorrentMeta {
-            val root = Bencode.decode(bytes) as? Map<*, *> ?: throw IOException("Archivo .torrent inválido")
-            val info = root["info"] as? Map<*, *> ?: throw IOException("El .torrent no tiene información de archivos")
+            val root = Bencode.decode(bytes) as? Map<*, *> ?: throw IOException(t("Archivo .torrent inválido", "Invalid .torrent file"))
+            val info = root["info"] as? Map<*, *> ?: throw IOException(t("El .torrent no tiene información de archivos", "The .torrent has no file information"))
             val name = info.text("name.utf-8") ?: info.text("name") ?: "torrent"
             val created = ((root["creation date"] as? Long) ?: 0L) * 1000
 
@@ -115,7 +115,7 @@ object Bencode {
                 val length = String(data, pos, colon - pos, Charsets.US_ASCII).toInt()
                 data.copyOfRange(colon + 1, colon + 1 + length).also { pos = colon + 1 + length }
             }
-            else -> throw IOException("Bencode inválido en la posición $pos ('$c')")
+            else -> throw IOException(t("Bencode inválido en la posición", "Invalid bencode at position") + " $pos ('$c')")
         }
 
         private fun indexOf(c: Char, from: Int): Int {

@@ -166,8 +166,12 @@ class TorrentEngine(
                     lastChange = now
                 } else if (now - lastChange > stallTimeoutMs()) {
                     throw IOException(
-                        "La descarga no avanza (${status.numSeeds()} seeders, ${status.numPeers()} peers conectados). " +
-                            "Puede que el torrent no tenga gente compartiendo.",
+                        t(
+                            "La descarga no avanza (${status.numSeeds()} seeders, ${status.numPeers()} peers conectados). " +
+                                "Puede que el torrent no tenga gente compartiendo.",
+                            "The download is not progressing (${status.numSeeds()} seeders, ${status.numPeers()} peers connected). " +
+                                "The torrent may have nobody sharing it.",
+                        ),
                     )
                 }
                 lastActivity = now
@@ -202,7 +206,7 @@ class TorrentEngine(
             sm.find(info.infoHash())?.takeIf { it.isValid }?.let { return it }
             Thread.sleep(100)
         }
-        throw IOException("libtorrent no pudo agregar el torrent")
+        throw IOException(t("libtorrent no pudo agregar el torrent", "libtorrent could not add the torrent"))
     }
 
     private fun removeFromSession(sm: SessionManager, torrentId: String) {

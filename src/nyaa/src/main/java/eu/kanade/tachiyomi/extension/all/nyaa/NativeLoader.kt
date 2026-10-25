@@ -35,17 +35,17 @@ object NativeLoader {
 
     private fun extractFromApk(app: Application, packageName: String): File {
         val apk = apkCandidates(app, packageName).firstOrNull { it.isFile }
-            ?: throw IOException("No se encontró el APK de la extensión para cargar libtorrent")
+            ?: throw IOException(t("No se encontró el APK de la extensión para cargar libtorrent", "Could not find the extension APK to load libtorrent"))
         ZipFile(apk).use { zip ->
             val entry = Build.SUPPORTED_ABIS.firstNotNullOfOrNull { abi -> zip.getEntry("lib/$abi/$LIB_NAME") }
-                ?: throw IOException("Esta extensión no incluye libtorrent para ${Build.SUPPORTED_ABIS.joinToString()}")
+                ?: throw IOException(t("Esta extensión no incluye libtorrent para ", "This extension does not include libtorrent for ") + Build.SUPPORTED_ABIS.joinToString())
             val target = File(app.codeCacheDir, "nyaa-native/${apk.lastModified()}-${entry.crc}/$LIB_NAME")
             if (target.isFile && target.length() == entry.size) return target
             target.parentFile?.parentFile?.deleteRecursively()
             target.parentFile?.mkdirs()
             val partial = File(target.path + ".part")
             zip.getInputStream(entry).use { input -> partial.outputStream().use { input.copyTo(it) } }
-            if (!partial.renameTo(target)) throw IOException("No se pudo preparar libtorrent")
+            if (!partial.renameTo(target)) throw IOException(t("No se pudo preparar libtorrent", "Could not set up libtorrent"))
             return target
         }
     }
